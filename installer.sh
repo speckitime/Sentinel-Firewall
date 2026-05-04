@@ -93,12 +93,10 @@ ok "Packages installed"
 # =============================================================================
 info "Configuring LAN interface $LAN_IF with gateway IP $LAN_GW/$CIDR..."
 
-# Apply immediately (flushes existing IPs on LAN_IF)
 ip addr flush dev "$LAN_IF" 2>/dev/null || true
 ip addr add "${LAN_GW}/${CIDR}" dev "$LAN_IF"
 ip link set "$LAN_IF" up
 
-# Persist via netplan (removes DHCP on LAN side)
 mkdir -p /etc/netplan
 cat > /etc/netplan/99-sentinel-lan.yaml << NETEOF
 network:
@@ -121,7 +119,6 @@ info "Configuring nftables..."
 sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
 sysctl -w net.ipv4.ip_forward=1 > /dev/null
 
-# Backup existing nftables.conf if not a previous Sentinel install
 if [[ -f /etc/nftables.conf ]] && ! grep -q 'sentinel_firewall' /etc/nftables.conf 2>/dev/null; then
   BACKUP="/etc/nftables.conf.pre-sentinel.$(date +%Y%m%d%H%M%S)"
   cp /etc/nftables.conf "$BACKUP"
@@ -266,12 +263,23 @@ ok "Kea DHCP configured (control agent on port 8001)"
 # =============================================================================
 info "Configuring Unbound DNS..."
 
+# Disable systemd-resolved stub listener so it doesn't hold port 53
+if systemctl is-active --quiet systemd-resolved; then
+  mkdir -p /etc/systemd/resolved.conf.d
+  cat > /etc/systemd/resolved.conf.d/no-stub.conf << RESEOF
+[Resolve]
+DNSStubListener=no
+RESEOF
+  systemctl restart systemd-resolved
+  # Remove the stub symlink so /etc/resolv.conf points to a real nameserver
+  rm -f /etc/resolv.conf
+  echo "nameserver 1.1.1.1" > /etc/resolv.conf
+fi
+
 mkdir -p /etc/unbound/unbound.conf.d
 cat > /etc/unbound/unbound.conf.d/sentinel.conf << UBEOF
 server:
-  # Listen on all interfaces; access-control restricts who can query
   interface: 0.0.0.0
-  interface: ::0
   port: 53
   access-control: ${LAN_SUBNET} allow
   access-control: 10.8.0.0/24 allow
@@ -297,8 +305,16 @@ forward-zone:
   forward-addr: 8.8.8.8
 UBEOF
 
+# Validate config before starting
+if ! unbound-checkconf /etc/unbound/unbound.conf.d/sentinel.conf 2>&1; then
+  error "Unbound config validation failed — see above"
+fi
+
 systemctl enable unbound
-systemctl restart unbound
+systemctl restart unbound || {
+  journalctl -u unbound --no-pager -n 20
+  error "Unbound failed to start — see logs above"
+}
 ok "Unbound DNS configured"
 
 # =============================================================================
@@ -493,7 +509,6 @@ email_enabled    = false
 telegram_enabled = false
 CFGEOF
 
-# Hash admin password + generate JWT secret
 JWT_SECRET=$(openssl rand -hex 32)
 ADMIN_HASH=$("$INSTALL_DIR/.venv/bin/python3" -c \
   "from passlib.context import CryptContext; ctx=CryptContext(schemes=['bcrypt']); print(ctx.hash('${ADMIN_PASS}'))")
@@ -519,7 +534,6 @@ systemctl daemon-reload
 systemctl enable sentinel-api sentinel-ids sentinel-scanner.timer
 systemctl start sentinel-api
 
-# Wait for API to come up
 for i in $(seq 1 10); do
   curl -sf http://127.0.0.1:8000/api/system/health > /dev/null && break
   sleep 2
