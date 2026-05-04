@@ -132,8 +132,8 @@ table inet sentinel_firewall {
     ct state {established, related} accept
     iif lo accept
     ip saddr @blocked_ips drop
-    iif "${LAN_IF}" accept
-    iif "wg0" accept
+    iifname "${LAN_IF}" accept
+    iifname "wg0" accept
     tcp dport 22 accept
     tcp dport {80, 443} accept
     icmp type echo-request accept
@@ -145,9 +145,9 @@ table inet sentinel_firewall {
     type filter hook forward priority 0; policy drop;
     ct state {established, related} accept
     ip saddr @blocked_ips drop
-    iif "${LAN_IF}" oif "${WAN_IF}" accept
-    iif "wg0" oif "${WAN_IF}" accept
-    iif "${WAN_IF}" ct state {established, related} accept
+    iifname "${LAN_IF}" oifname "${WAN_IF}" accept
+    iifname "wg0" oifname "${WAN_IF}" accept
+    iifname "${WAN_IF}" ct state {established, related} accept
     # SENTINEL_FORWARD_RULES_START
     # SENTINEL_FORWARD_RULES_END
   }
@@ -167,7 +167,7 @@ table ip sentinel_nat {
   chain postrouting {
     type nat hook postrouting priority 100;
     # SENTINEL_MASQUERADE_START
-    ip saddr ${LAN_SUBNET} oif "${WAN_IF}" masquerade
+    ip saddr ${LAN_SUBNET} oifname "${WAN_IF}" masquerade
     # SENTINEL_MASQUERADE_END
   }
 }
