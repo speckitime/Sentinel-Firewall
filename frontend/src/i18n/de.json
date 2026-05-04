@@ -1,0 +1,143 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "firewall": "Firewall",
+    "nat": "NAT & Portweiterleitung",
+    "dhcp": "DHCP",
+    "dns": "DNS",
+    "vpn": "VPN",
+    "threats": "Bedrohungen",
+    "settings": "Einstellungen"
+  },
+  "common": {
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "add": "Hinzufügen",
+    "enabled": "Aktiviert",
+    "disabled": "Deaktiviert",
+    "active": "Aktiv",
+    "inactive": "Inaktiv",
+    "loading": "Laden…",
+    "error": "Fehler",
+    "confirm_delete": "Diesen Eintrag wirklich löschen?",
+    "unknown": "Unbekannt"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "traffic": "Netzwerkverkehr",
+    "threats_today": "Heutige Bedrohungen",
+    "blocked_ips": "Gesperrte IPs",
+    "active_leases": "Aktive DHCP-Leases",
+    "vpn_peers": "VPN-Peers",
+    "system_health": "Systemstatus"
+  },
+  "firewall": {
+    "title": "Firewall",
+    "rules": "Regeln",
+    "blocked_ips": "Gesperrte IPs",
+    "block_ip": "IP sperren",
+    "unblock": "Freigeben",
+    "ip_address": "IP-Adresse",
+    "reason": "Grund (optional)"
+  },
+  "nat": {
+    "title": "NAT & Portweiterleitung",
+    "masquerade_active": "Masquerade aktiv",
+    "masquerade_inactive": "Masquerade inaktiv",
+    "masquerade_via": "{{subnet}} → Internet über {{interface}} ({{ip}})",
+    "port_forwards": "Portweiterleitungen",
+    "add_forward": "Portweiterleitung hinzufügen",
+    "name": "Name",
+    "protocol": "Protokoll",
+    "ext_port": "Externer Port",
+    "int_target": "Internes Ziel",
+    "status": "Status",
+    "actions": "Aktionen",
+    "quickstart": "Schnellstart-Vorlagen",
+    "qs_webserver": "Webserver",
+    "qs_rdp": "Remotedesktop",
+    "qs_minecraft": "Minecraft",
+    "qs_custom": "Eigene Regel"
+  },
+  "dhcp": {
+    "title": "DHCP",
+    "leases": "Aktive Leases",
+    "static": "Statische Zuweisungen",
+    "mac": "MAC-Adresse",
+    "ip": "IP-Adresse",
+    "hostname": "Hostname",
+    "expires": "Läuft ab",
+    "add_static": "Statische Zuweisung hinzufügen"
+  },
+  "dns": {
+    "title": "DNS",
+    "records": "Lokale Einträge",
+    "forwarders": "Forwarder",
+    "add_record": "Eintrag hinzufügen",
+    "name": "Name",
+    "type": "Typ",
+    "value": "Wert"
+  },
+  "vpn": {
+    "title": "WireGuard VPN",
+    "peers": "Peers",
+    "add_peer": "Peer hinzufügen",
+    "peer_name": "Peer-Name",
+    "public_key": "Öffentlicher Schlüssel",
+    "allowed_ips": "Erlaubte IPs",
+    "show_qr": "QR-Code anzeigen",
+    "remove": "Entfernen"
+  },
+  "threats": {
+    "title": "Bedrohungsmonitor",
+    "recent": "Letzte Alarme",
+    "src_ip": "Quell-IP",
+    "signature": "Signatur",
+    "confidence": "Konfidenz",
+    "action": "Maßnahme",
+    "timestamp": "Uhrzeit",
+    "block_manual": "Manuell sperren",
+    "auto_block": "Automatisch sperren",
+    "stats": "Statistik"
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "language": "Sprache",
+    "ids": "IDS / Bedrohungsreaktion",
+    "auto_block": "Automatische IP-Sperrung",
+    "confidence_threshold": "Sperrschwelle (%)",
+    "notifications": "Benachrichtigungen",
+    "save_success": "Einstellungen gespeichert."
+  },
+  "setup": {
+    "title": "Willkommen bei Sentinel",
+    "step_welcome": "Willkommen",
+    "step_network": "Netzwerk",
+    "step_account": "Admin-Konto",
+    "step_services": "Dienste",
+    "step_complete": "Fertig",
+    "next": "Weiter",
+    "back": "Zurück",
+    "finish": "Setup abschließen",
+    "wan_if": "WAN-Interface",
+    "lan_if": "LAN-Interface",
+    "lan_subnet": "LAN-Subnetz",
+    "admin_password": "Admin-Passwort",
+    "confirm_password": "Passwort bestätigen",
+    "enable_dhcp": "DHCP-Server aktivieren",
+    "enable_dns": "DNS-Resolver aktivieren",
+    "enable_vpn": "WireGuard VPN aktivieren",
+    "enable_ids": "Angriffserkennung aktivieren",
+    "setup_complete": "Setup abgeschlossen!",
+    "go_dashboard": "Zum Dashboard"
+  },
+  "login": {
+    "title": "Sentinel-Login",
+    "username": "Benutzername",
+    "password": "Passwort",
+    "submit": "Anmelden",
+    "error": "Ungültige Anmeldedaten"
+  }
+}
