@@ -1,0 +1,8 @@
+# Subnet / VLAN configuration (future use)
+
+[[subnets]]
+name    = "LAN"
+cidr    = "10.0.1.0/24"
+vlan_id = 0
+dhcp    = true
+dns     = true

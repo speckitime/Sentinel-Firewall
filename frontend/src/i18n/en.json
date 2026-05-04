@@ -1,0 +1,143 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "firewall": "Firewall",
+    "nat": "NAT & Port Forwarding",
+    "dhcp": "DHCP",
+    "dns": "DNS",
+    "vpn": "VPN",
+    "threats": "Threats",
+    "settings": "Settings"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "active": "Active",
+    "inactive": "Inactive",
+    "loading": "Loading…",
+    "error": "Error",
+    "confirm_delete": "Are you sure you want to delete this entry?",
+    "unknown": "Unknown"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "traffic": "Network Traffic",
+    "threats_today": "Threats Today",
+    "blocked_ips": "Blocked IPs",
+    "active_leases": "Active DHCP Leases",
+    "vpn_peers": "VPN Peers",
+    "system_health": "System Health"
+  },
+  "firewall": {
+    "title": "Firewall",
+    "rules": "Rules",
+    "blocked_ips": "Blocked IPs",
+    "block_ip": "Block IP",
+    "unblock": "Unblock",
+    "ip_address": "IP Address",
+    "reason": "Reason (optional)"
+  },
+  "nat": {
+    "title": "NAT & Port Forwarding",
+    "masquerade_active": "Masquerade active",
+    "masquerade_inactive": "Masquerade inactive",
+    "masquerade_via": "{{subnet}} → Internet via {{interface}} ({{ip}})",
+    "port_forwards": "Port Forwards",
+    "add_forward": "Add Port Forward",
+    "name": "Name",
+    "protocol": "Protocol",
+    "ext_port": "External Port",
+    "int_target": "Internal Target",
+    "status": "Status",
+    "actions": "Actions",
+    "quickstart": "Quick-Start Templates",
+    "qs_webserver": "Web Server",
+    "qs_rdp": "Remote Desktop",
+    "qs_minecraft": "Minecraft",
+    "qs_custom": "Custom"
+  },
+  "dhcp": {
+    "title": "DHCP",
+    "leases": "Active Leases",
+    "static": "Static Assignments",
+    "mac": "MAC Address",
+    "ip": "IP Address",
+    "hostname": "Hostname",
+    "expires": "Expires",
+    "add_static": "Add Static Assignment"
+  },
+  "dns": {
+    "title": "DNS",
+    "records": "Local Records",
+    "forwarders": "Forwarders",
+    "add_record": "Add Record",
+    "name": "Name",
+    "type": "Type",
+    "value": "Value"
+  },
+  "vpn": {
+    "title": "WireGuard VPN",
+    "peers": "Peers",
+    "add_peer": "Add Peer",
+    "peer_name": "Peer Name",
+    "public_key": "Public Key",
+    "allowed_ips": "Allowed IPs",
+    "show_qr": "Show QR Code",
+    "remove": "Remove"
+  },
+  "threats": {
+    "title": "Threat Monitor",
+    "recent": "Recent Alerts",
+    "src_ip": "Source IP",
+    "signature": "Signature",
+    "confidence": "Confidence",
+    "action": "Action",
+    "timestamp": "Time",
+    "block_manual": "Block manually",
+    "auto_block": "Auto-block",
+    "stats": "Statistics"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "ids": "IDS / Threat Response",
+    "auto_block": "Automatic IP blocking",
+    "confidence_threshold": "Block threshold (%)",
+    "notifications": "Notifications",
+    "save_success": "Settings saved."
+  },
+  "setup": {
+    "title": "Welcome to Sentinel",
+    "step_welcome": "Welcome",
+    "step_network": "Network",
+    "step_account": "Admin Account",
+    "step_services": "Services",
+    "step_complete": "Complete",
+    "next": "Next",
+    "back": "Back",
+    "finish": "Finish Setup",
+    "wan_if": "WAN Interface",
+    "lan_if": "LAN Interface",
+    "lan_subnet": "LAN Subnet",
+    "admin_password": "Admin Password",
+    "confirm_password": "Confirm Password",
+    "enable_dhcp": "Enable DHCP Server",
+    "enable_dns": "Enable DNS Resolver",
+    "enable_vpn": "Enable WireGuard VPN",
+    "enable_ids": "Enable Intrusion Detection",
+    "setup_complete": "Setup complete!",
+    "go_dashboard": "Go to Dashboard"
+  },
+  "login": {
+    "title": "Sentinel Login",
+    "username": "Username",
+    "password": "Password",
+    "submit": "Log in",
+    "error": "Invalid credentials"
+  }
+}

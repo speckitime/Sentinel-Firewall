@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-sentinel-bg text-sentinel-text;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { @apply bg-sentinel-bg; }
+::-webkit-scrollbar-thumb { @apply bg-sentinel-border rounded; }
+::-webkit-scrollbar-thumb:hover { @apply bg-sentinel-muted; }
+
+/* Focus ring */
+*:focus-visible {
+  @apply outline-none ring-2 ring-sentinel-primary ring-offset-2 ring-offset-sentinel-bg;
+}
