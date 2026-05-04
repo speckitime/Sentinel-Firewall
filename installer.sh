@@ -9,9 +9,9 @@ set -euo pipefail
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'
 BOLD='\033[1m'; RESET='\033[0m'
 
-SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/opt/sentinel"
 CONF_DIR="/etc/sentinel"
+REPO_URL="https://github.com/speckitime/Sentinel-Firewall.git"
 
 info()  { echo -e "${CYAN}[INFO]${RESET}  $*"; }
 ok()    { echo -e "${GREEN}[OK]${RESET}    $*"; }
@@ -85,7 +85,7 @@ apt-get install -y -qq \
   nmap \
   nodejs npm \
   nginx openssl \
-  net-tools curl jq psmisc
+  net-tools curl jq psmisc git
 ok "Packages installed"
 
 # =============================================================================
@@ -321,8 +321,6 @@ chmod 700 /etc/wireguard
 WG_PRIVATE=$(wg genkey)
 WG_PUBLIC=$(echo "$WG_PRIVATE" | wg pubkey)
 
-# Note: no PostUp/PostDown needed — nftables forward chain already accepts
-# all traffic from wg0 via iifname "wg0" rules
 cat > /etc/wireguard/wg0.conf << WGEOF
 [Interface]
 Address = 10.8.0.1/24
@@ -386,12 +384,23 @@ systemctl restart suricata
 ok "Suricata configured"
 
 # =============================================================================
-# 10. PYTHON VENV + BACKEND
+# 10. CLONE SOURCE CODE
+# =============================================================================
+info "Cloning Sentinel source code..."
+
+if [[ -d "$INSTALL_DIR/.git" ]]; then
+  git -C "$INSTALL_DIR" pull --quiet origin main
+  ok "Source code updated"
+else
+  rm -rf "$INSTALL_DIR"
+  git clone --quiet --depth=1 "$REPO_URL" "$INSTALL_DIR"
+  ok "Source code cloned to $INSTALL_DIR"
+fi
+
+# =============================================================================
+# 11. PYTHON VENV + BACKEND
 # =============================================================================
 info "Setting up Python environment..."
-
-mkdir -p "$INSTALL_DIR"
-cp -r "$SRC_DIR"/* "$INSTALL_DIR/" 2>/dev/null || true
 
 python3.12 -m venv "$INSTALL_DIR/.venv"
 "$INSTALL_DIR/.venv/bin/pip" install --quiet --upgrade pip
@@ -399,7 +408,7 @@ python3.12 -m venv "$INSTALL_DIR/.venv"
 ok "Python venv ready"
 
 # =============================================================================
-# 11. FRONTEND BUILD + NGINX
+# 12. FRONTEND BUILD + NGINX
 # =============================================================================
 info "Building frontend..."
 
@@ -455,7 +464,7 @@ systemctl restart nginx
 ok "Nginx configured with SSL"
 
 # =============================================================================
-# 12. SENTINEL CONFIG
+# 13. SENTINEL CONFIG
 # =============================================================================
 info "Writing Sentinel configuration..."
 
@@ -522,7 +531,7 @@ chmod 600 "$CONF_DIR/secrets.toml"
 ok "Configuration written to $CONF_DIR"
 
 # =============================================================================
-# 13. SYSTEMD SERVICES
+# 14. SYSTEMD SERVICES
 # =============================================================================
 info "Installing systemd services..."
 
