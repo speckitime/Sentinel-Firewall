@@ -89,6 +89,31 @@ apt-get install -y -qq \
 ok "Packages installed"
 
 # =============================================================================
+# 4b. CONFIGURE LAN INTERFACE IP
+# =============================================================================
+info "Configuring LAN interface $LAN_IF with gateway IP $LAN_GW/$CIDR..."
+
+# Apply immediately (flushes existing IPs on LAN_IF)
+ip addr flush dev "$LAN_IF" 2>/dev/null || true
+ip addr add "${LAN_GW}/${CIDR}" dev "$LAN_IF"
+ip link set "$LAN_IF" up
+
+# Persist via netplan (removes DHCP on LAN side)
+mkdir -p /etc/netplan
+cat > /etc/netplan/99-sentinel-lan.yaml << NETEOF
+network:
+  version: 2
+  ethernets:
+    ${LAN_IF}:
+      dhcp4: false
+      addresses:
+        - ${LAN_GW}/${CIDR}
+NETEOF
+chmod 600 /etc/netplan/99-sentinel-lan.yaml
+netplan apply 2>/dev/null || warn "netplan apply failed — IP set via ip command only"
+ok "LAN interface configured: $LAN_IF = $LAN_GW/$CIDR"
+
+# =============================================================================
 # 5. NFTABLES
 # =============================================================================
 info "Configuring nftables..."
@@ -96,7 +121,7 @@ info "Configuring nftables..."
 sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
 sysctl -w net.ipv4.ip_forward=1 > /dev/null
 
-# Backup existing nftables.conf if it exists and is not a previous Sentinel install
+# Backup existing nftables.conf if not a previous Sentinel install
 if [[ -f /etc/nftables.conf ]] && ! grep -q 'sentinel_firewall' /etc/nftables.conf 2>/dev/null; then
   BACKUP="/etc/nftables.conf.pre-sentinel.$(date +%Y%m%d%H%M%S)"
   cp /etc/nftables.conf "$BACKUP"
@@ -244,12 +269,16 @@ info "Configuring Unbound DNS..."
 mkdir -p /etc/unbound/unbound.conf.d
 cat > /etc/unbound/unbound.conf.d/sentinel.conf << UBEOF
 server:
-  interface: ${LAN_GW}
-  interface: 127.0.0.1
+  # Listen on all interfaces; access-control restricts who can query
+  interface: 0.0.0.0
+  interface: ::0
   port: 53
   access-control: ${LAN_SUBNET} allow
+  access-control: 10.8.0.0/24 allow
   access-control: 127.0.0.0/8 allow
+  access-control: 0.0.0.0/0 refuse
   do-ip4: yes
+  do-ip6: no
   do-udp: yes
   do-tcp: yes
   hide-identity: yes
@@ -287,8 +316,8 @@ cat > /etc/wireguard/wg0.conf << WGEOF
 Address = 10.8.0.1/24
 ListenPort = 51820
 PrivateKey = ${WG_PRIVATE}
-PostUp   = nft add element ip sentinel_nat vpn_clients { 10.8.0.0/24 }
-PostDown = nft delete element ip sentinel_nat vpn_clients { 10.8.0.0/24 } 2>/dev/null || true
+PostUp   = nft add element inet sentinel_firewall vpn_clients { 10.8.0.0/24 }
+PostDown = nft delete element inet sentinel_firewall vpn_clients { 10.8.0.0/24 } 2>/dev/null || true
 
 # Peers added via Sentinel dashboard
 WGEOF
