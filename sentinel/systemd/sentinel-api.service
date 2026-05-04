@@ -1,0 +1,32 @@
+[Unit]
+Description=Sentinel Firewall API
+Documentation=https://github.com/speckitime/sentinel-firewall
+After=network.target nftables.service
+Wants=nftables.service
+
+[Service]
+Type=notify
+User=root
+Group=root
+WorkingDirectory=/opt/sentinel
+Environment="PATH=/opt/sentinel/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStartPre=/bin/test -f /etc/sentinel/sentinel.toml
+ExecStart=/opt/sentinel/.venv/bin/uvicorn backend.main:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --no-access-log
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+WatchdogSec=30s
+NotifyAccess=main
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sentinel-api
+
+# Security hardening
+PrivateTmp=false
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target
