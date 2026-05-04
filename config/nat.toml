@@ -1,0 +1,10 @@
+# NAT / Port Forwarding rules
+# Managed by Sentinel API — do not edit manually while service is running
+
+[[port_forwards]]
+name         = "Example Webserver"
+protocol     = "tcp"
+external_port = 8080
+internal_ip  = "10.0.1.100"
+internal_port = 80
+enabled      = false
