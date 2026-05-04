@@ -18,16 +18,17 @@ ok()    { echo -e "${GREEN}[OK]${RESET}    $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
 error() { echo -e "${RED}[ERROR]${RESET} $*"; exit 1; }
 
-# Wait for a service to become active, print journal on failure
+# Wait for a service to become active, print journal on failure.
+# Usage: wait_service <service> [max_tries]   default max_tries=10
 wait_service() {
-  local svc="$1" tries=0
+  local svc="$1" max="${2:-10}" tries=0
   while ! systemctl is-active --quiet "$svc"; do
     tries=$((tries+1))
-    [[ $tries -ge 10 ]] && {
+    if [[ $tries -ge $max ]]; then
       echo
       journalctl -u "$svc" --no-pager -n 30
       error "Service '$svc' failed to start — see logs above"
-    }
+    fi
     sleep 1
   done
 }
@@ -59,9 +60,16 @@ done
 read -rp "Select WAN interface [0-$((${#IFACES[@]}-1))]: " WAN_IDX
 read -rp "Select LAN interface [0-$((${#IFACES[@]}-1))]: " LAN_IDX
 
-[[ ! "$WAN_IDX" =~ ^[0-9]+$ ]] || [[ $WAN_IDX -ge ${#IFACES[@]} ]] && error "Invalid WAN index"
-[[ ! "$LAN_IDX" =~ ^[0-9]+$ ]] || [[ $LAN_IDX -ge ${#IFACES[@]} ]] && error "Invalid LAN index"
-[[ "$WAN_IDX" == "$LAN_IDX" ]] && error "WAN and LAN must be different interfaces"
+# Validate indices with if/then to avoid set -e false-positive on valid input
+if [[ ! "$WAN_IDX" =~ ^[0-9]+$ ]] || [[ "$WAN_IDX" -ge "${#IFACES[@]}" ]]; then
+  error "Invalid WAN selection"
+fi
+if [[ ! "$LAN_IDX" =~ ^[0-9]+$ ]] || [[ "$LAN_IDX" -ge "${#IFACES[@]}" ]]; then
+  error "Invalid LAN selection"
+fi
+if [[ "$WAN_IDX" == "$LAN_IDX" ]]; then
+  error "WAN and LAN must be different interfaces"
+fi
 
 WAN_IF="${IFACES[$WAN_IDX]}"
 LAN_IF="${IFACES[$LAN_IDX]}"
@@ -76,7 +84,6 @@ PUBLIC_IP=$(ip -4 addr show "$WAN_IF" | grep -oP '(?<=inet )\d+\.\d+\.\d+\.\d+' 
 while true; do
   read -rp "LAN subnet [default: 10.0.1.0/24]: " LAN_SUBNET
   LAN_SUBNET="${LAN_SUBNET:-10.0.1.0/24}"
-  # Basic CIDR validation
   if [[ "$LAN_SUBNET" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$ ]]; then
     break
   fi
@@ -386,43 +393,46 @@ ok "WireGuard configured (public key: $WG_PUBLIC)"
 # =============================================================================
 info "Configuring Suricata..."
 
-# Write Sentinel-specific Suricata config
-cat > /etc/suricata/suricata-sentinel.yaml << SUREOF
-%YAML 1.1
----
-default-log-dir: /var/log/suricata/
+suricata-update 2>&1 | tail -5 || warn "suricata-update failed — rules may be outdated"
 
-outputs:
-  - eve-log:
-      enabled: yes
-      filetype: regular
-      filename: eve.json
-      types:
-        - alert:
-            payload: yes
-            payload-printable: yes
-            metadata: yes
-        - stats:
-            totals: yes
+# Patch the default suricata.yaml to use our WAN interface and LAN subnet.
+# We modify in-place rather than replacing, keeping all distro defaults intact.
+if [[ -f /etc/suricata/suricata.yaml ]]; then
+  cp /etc/suricata/suricata.yaml /etc/suricata/suricata.yaml.pre-sentinel.bak
+  python3 - "${WAN_IF}" "${LAN_SUBNET}" << 'SUPY'
+import re, sys
 
-af-packet:
-  - interface: ${WAN_IF}
-    threads: auto
-    cluster-id: 99
-    cluster-type: cluster_flow
-    defrag: yes
+wan_if     = sys.argv[1]
+lan_subnet = sys.argv[2]
+path       = '/etc/suricata/suricata.yaml'
 
-app-layer:
-  protocols:
-    http:  {enabled: yes}
-    tls:   {enabled: yes}
-    dns:   {enabled: yes}
-SUREOF
+text = open(path).read()
 
-suricata-update 2>&1 | tail -3 || warn "suricata-update failed — rules may be outdated"
+# Update HOME_NET to include our LAN subnet and WireGuard range
+text = re.sub(
+    r'(HOME_NET:\s*)"[^"]*"',
+    f'\\1"[{lan_subnet},10.8.0.0/24]"',
+    text,
+)
+
+# Update the first af-packet interface entry (non-greedy match through newlines)
+text = re.sub(
+    r'(af-packet:.*?interface:\s*)\S+',
+    lambda m: m.group(1) + wan_if,
+    text,
+    count=1,
+    flags=re.DOTALL,
+)
+
+open(path, 'w').write(text)
+print(f'suricata.yaml patched: interface={wan_if}, HOME_NET updated')
+SUPY
+fi
+
 systemctl enable suricata
 systemctl restart suricata
-wait_service suricata
+# Suricata loads rules on startup — allow up to 60 seconds
+wait_service suricata 60
 ok "Suricata configured"
 
 # =============================================================================
@@ -513,7 +523,7 @@ ok "Nginx configured with SSL"
 # =============================================================================
 info "Writing Sentinel configuration..."
 
-mkdir -p "$CONF_DIR"
+mkdir -p "$CONF_DIR" /var/log/sentinel /var/lib/sentinel
 chmod 750 "$CONF_DIR"
 
 cat > "$CONF_DIR/sentinel.toml" << CFGEOF
@@ -560,8 +570,7 @@ email_enabled    = false
 telegram_enabled = false
 CFGEOF
 
-# Hash password via temp file to safely handle special characters
-JWT_SECRET=$(openssl rand -hex 32)
+# Hash admin password via temp file to safely handle special characters
 PASS_FILE=$(mktemp)
 chmod 600 "$PASS_FILE"
 printf '%s' "$ADMIN_PASS" > "$PASS_FILE"
@@ -574,14 +583,27 @@ PYEOF
 )
 rm -f "$PASS_FILE"
 
-cat > "$CONF_DIR/secrets.toml" << SECEOF
-[auth]
-admin_password_hash = "${ADMIN_HASH}"
-jwt_secret          = "${JWT_SECRET}"
-jwt_algorithm       = "HS256"
-jwt_expire_minutes  = 720
-SECEOF
-chmod 600 "$CONF_DIR/secrets.toml"
+JWT_SECRET=$(openssl rand -hex 32)
+
+# Write secrets.toml via Python so the bcrypt hash (which contains '$' signs)
+# is never interpolated by the shell inside a heredoc.
+HASH_TMP=$(mktemp)
+chmod 600 "$HASH_TMP"
+printf '%s' "$ADMIN_HASH" > "$HASH_TMP"
+"$INSTALL_DIR/.venv/bin/python3" - "$HASH_TMP" "$JWT_SECRET" "$CONF_DIR/secrets.toml" << 'SECPY'
+import sys, os
+hash_val = open(sys.argv[1]).read().strip()
+jwt_sec  = sys.argv[2]
+out      = sys.argv[3]
+with open(out, 'w') as f:
+    f.write('[auth]\n')
+    f.write(f'admin_password_hash = "{hash_val}"\n')
+    f.write(f'jwt_secret          = "{jwt_sec}"\n')
+    f.write('jwt_algorithm       = "HS256"\n')
+    f.write('jwt_expire_minutes  = 720\n')
+os.chmod(out, 0o600)
+SECPY
+rm -f "$HASH_TMP"
 ok "Configuration written to $CONF_DIR"
 
 # =============================================================================
