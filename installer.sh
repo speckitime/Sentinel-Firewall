@@ -393,7 +393,7 @@ if [[ -d "$INSTALL_DIR/.git" ]]; then
   ok "Source code updated"
 else
   rm -rf "$INSTALL_DIR"
-  git clone --quiet --depth=1 "$REPO_URL" "$INSTALL_DIR"
+  git clone --depth=1 "$REPO_URL" "$INSTALL_DIR"
   ok "Source code cloned to $INSTALL_DIR"
 fi
 
@@ -404,7 +404,7 @@ info "Setting up Python environment..."
 
 python3.12 -m venv "$INSTALL_DIR/.venv"
 "$INSTALL_DIR/.venv/bin/pip" install --quiet --upgrade pip
-"$INSTALL_DIR/.venv/bin/pip" install --quiet -r "$INSTALL_DIR/backend/requirements.txt"
+"$INSTALL_DIR/.venv/bin/pip" install -r "$INSTALL_DIR/backend/requirements.txt"
 ok "Python venv ready"
 
 # =============================================================================
@@ -413,8 +413,8 @@ ok "Python venv ready"
 info "Building frontend..."
 
 cd "$INSTALL_DIR/frontend"
-npm ci --silent
-npm run build --silent
+npm ci 2>&1 || error "npm ci failed — see above"
+npm run build 2>&1 || error "npm run build failed — see above"
 ok "Frontend built"
 
 # SSL self-signed
