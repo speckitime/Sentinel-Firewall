@@ -1,0 +1,48 @@
+# Sentinel Firewall — Hauptkonfiguration
+# Wird vom Installer generiert und über das Dashboard aktualisiert.
+# Produktionspfad: /etc/sentinel/sentinel.toml
+
+[general]
+hostname = "sentinel"
+timezone = "Europe/Berlin"
+language = "de"  # "de" oder "en"
+
+[network]
+wan_interface = ""       # Vom Installer gesetzt (z.B. "eth0")
+lan_interface = ""       # Vom Installer gesetzt (z.B. "eth1")
+lan_subnet = ""          # z.B. "192.168.1.0/24"
+lan_gateway = ""         # z.B. "192.168.1.1"
+public_ip = ""           # Automatisch erkannt
+
+[api]
+host = "0.0.0.0"
+port = 8000
+jwt_expiry_minutes = 480  # 8 Stunden
+
+[ids]
+enabled = true
+auto_block = false        # Automatisches IP-Blockieren (opt-in!)
+confidence_threshold = 80 # 0-100; nur über diesem Wert wird blockiert
+eve_log = "/var/log/suricata/eve.json"
+
+[scanner]
+enabled = true
+schedule_hour = 3         # Täglicher Scan um 3:00 Uhr
+nmap_timing = "T4"        # T1-T5; T4 = aggressiv aber nicht destruktiv
+
+[notifications]
+telegram_enabled = false
+email_enabled = false
+
+[dhcp]
+enabled = true
+lease_time = 86400        # 24 Stunden in Sekunden
+
+[dns]
+enabled = true
+upstream = "9.9.9.9"     # Fallback upstream DNS
+
+[vpn]
+enabled = true
+subnet = "10.8.0.0/24"
+port = 51820
