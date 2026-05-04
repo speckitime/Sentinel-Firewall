@@ -143,9 +143,10 @@ table inet sentinel_firewall {
     timeout 10m
   }
 
+  # interval flag allows CIDR prefixes (e.g. 10.8.0.0/24 added by wg PostUp)
   set vpn_clients {
     type ipv4_addr
-    flags dynamic
+    flags interval
   }
 
   chain input {
@@ -326,6 +327,8 @@ cat > /etc/wireguard/wg0.conf << WGEOF
 Address = 10.8.0.1/24
 ListenPort = 51820
 PrivateKey = ${WG_PRIVATE}
+PostUp   = nft add element inet sentinel_firewall vpn_clients { 10.8.0.0/24 }
+PostDown = nft delete element inet sentinel_firewall vpn_clients { 10.8.0.0/24 } 2>/dev/null || true
 
 # Peers are added via the Sentinel dashboard
 WGEOF
