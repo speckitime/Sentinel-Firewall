@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Sentinel port scanner daily
+
+[Timer]
+OnBootSec=5min
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

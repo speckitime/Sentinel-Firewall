@@ -1,0 +1,23 @@
+[Unit]
+Description=Sentinel Firewall API
+After=network.target nftables.service
+Requires=nftables.service
+
+[Service]
+Type=notify
+User=root
+WorkingDirectory=/opt/sentinel
+Environment=PYTHONPATH=/opt/sentinel
+ExecStart=/opt/sentinel/.venv/bin/uvicorn backend.main:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --no-access-log
+Restart=on-failure
+RestartSec=5s
+WatchdogSec=30s
+NotifyAccess=main
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

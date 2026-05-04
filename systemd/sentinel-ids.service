@@ -1,0 +1,18 @@
+[Unit]
+Description=Sentinel IDS Log Monitor
+After=suricata.service sentinel-api.service
+Requires=sentinel-api.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/sentinel
+Environment=PYTHONPATH=/opt/sentinel
+ExecStart=/opt/sentinel/.venv/bin/python3 -m backend.ids.suricata_standalone
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

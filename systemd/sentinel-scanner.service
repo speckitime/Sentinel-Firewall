@@ -1,0 +1,21 @@
+[Unit]
+Description=Sentinel LAN Port Scanner (oneshot)
+After=sentinel-api.service
+Requires=sentinel-api.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/sentinel
+Environment=PYTHONPATH=/opt/sentinel
+ExecStart=/opt/sentinel/.venv/bin/python3 -c "
+import asyncio, httpx
+async def run():
+    async with httpx.AsyncClient() as c:
+        await c.post('http://127.0.0.1:8000/api/scanner/scan',
+            json={'target': 'lan', 'ports': '1-1024'},
+            headers={'Authorization': 'Bearer INTERNAL'})
+asyncio.run(run())
+"
+StandardOutput=journal
+StandardError=journal
