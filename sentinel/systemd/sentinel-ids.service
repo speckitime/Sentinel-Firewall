@@ -1,0 +1,26 @@
+[Unit]
+Description=Sentinel IDS/IPS Monitor (Suricata EVE log watcher)
+Documentation=https://github.com/speckitime/sentinel-firewall
+After=suricata.service sentinel-api.service
+Requires=sentinel-api.service
+BindsTo=suricata.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/sentinel
+Environment="PATH=/opt/sentinel/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/opt/sentinel/.venv/bin/python -c "
+import asyncio
+from backend.ids.response import ResponseEngine
+asyncio.run(ResponseEngine().run_forever())
+"
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sentinel-ids
+
+[Install]
+WantedBy=multi-user.target

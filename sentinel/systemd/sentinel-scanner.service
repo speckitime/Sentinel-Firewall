@@ -1,0 +1,26 @@
+[Unit]
+Description=Sentinel Port Scanner (oneshot)
+Documentation=https://github.com/speckitime/sentinel-firewall
+After=sentinel-api.service network.target
+Requires=sentinel-api.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/sentinel
+Environment="PATH=/opt/sentinel/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/opt/sentinel/.venv/bin/python -c "
+import asyncio, uuid
+from backend.core.port_scanner import PortScanner
+scanner = PortScanner()
+job_id = str(uuid.uuid4())
+asyncio.run(scanner.scan_async(job_id, '', '1-1024'))
+print(f'Port scan job {job_id} complete')
+"
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sentinel-scanner
+
+[Install]
+WantedBy=multi-user.target
