@@ -1,0 +1,17 @@
+MESSAGES = {
+    "auth.invalid_credentials": "Ungültiger Benutzername oder Passwort.",
+    "auth.token_expired": "Sitzung abgelaufen. Bitte erneut anmelden.",
+    "firewall.block_success": "IP {ip} wurde gesperrt.",
+    "firewall.unblock_success": "IP {ip} wurde freigegeben.",
+    "nat.forward_added": "Portweiterleitung erfolgreich hinzugefügt.",
+    "nat.forward_deleted": "Portweiterleitung gelöscht.",
+    "nat.duplicate_port": "Port {port}/{proto} wird bereits verwendet.",
+    "nat.invalid_ip": "IP-Adresse {ip} liegt nicht im LAN-Subnetz.",
+    "dhcp.lease_added": "Statische Zuweisung hinzugefügt.",
+    "vpn.peer_added": "VPN-Peer '{name}' erstellt.",
+    "vpn.peer_removed": "VPN-Peer entfernt.",
+    "ids.blocked": "Bedrohung von {ip} automatisch gesperrt (Konfidenz {score}%).",
+    "ids.rate_limited": "Datenverkehr von {ip} wird gedrosselt (Konfidenz {score}%).",
+    "scanner.started": "Scan gestartet. Job-ID: {job_id}",
+    "scanner.complete": "Scan abgeschlossen. {count} offene Ports gefunden.",
+}
