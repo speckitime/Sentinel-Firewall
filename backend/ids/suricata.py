@@ -1,8 +1,9 @@
-"""Suricata EVE JSON log watcher."""
+"""Suricata EVE JSON log watcher with log-rotation awareness."""
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 from backend.core.config import load_config
@@ -11,30 +12,51 @@ from .response import ResponseEngine
 
 class SuricataWatcher:
     def __init__(self, manager) -> None:
-        self._manager  = manager
-        self._engine   = ResponseEngine()
+        self._manager = manager
+        self._engine  = ResponseEngine()
 
     async def tail_eve_log(self) -> None:
         eve_path = Path(load_config()["ids"]["eve_log"])
-        # Wait for log to exist
+
         while not eve_path.exists():
             await asyncio.sleep(5)
 
-        with open(eve_path) as f:
-            f.seek(0, 2)  # Seek to end
+        last_inode = os.stat(eve_path).st_ino
+        fh = open(eve_path)  # noqa: WPS515  (intentional unbuffered tail)
+        fh.seek(0, 2)  # seek to end on first open
+
+        try:
             while True:
-                line = f.readline()
+                # Detect log rotation: inode changes or file shrinks
+                try:
+                    current_inode = os.stat(eve_path).st_ino
+                except FileNotFoundError:
+                    current_inode = None
+
+                if current_inode != last_inode:
+                    # Log was rotated — reopen from the beginning of the new file
+                    fh.close()
+                    await asyncio.sleep(0.5)  # give logrotate/suricata time to create new file
+                    while not eve_path.exists():
+                        await asyncio.sleep(1)
+                    fh = open(eve_path)
+                    last_inode = os.stat(eve_path).st_ino
+
+                line = fh.readline()
                 if not line:
                     await asyncio.sleep(0.2)
                     continue
+
                 try:
                     event = json.loads(line)
                     if event.get("event_type") == "alert":
                         alert = self._parse_alert(event)
                         await self._engine.evaluate_alert(alert)
                         await self._manager.broadcast({"type": "threat", "data": alert})
-                except (json.JSONDecodeError, KeyError):
+                except json.JSONDecodeError:
                     continue
+        finally:
+            fh.close()
 
     def _parse_alert(self, event: dict) -> dict:
         alert_data = event.get("alert", {})

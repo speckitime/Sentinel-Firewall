@@ -96,6 +96,13 @@ info "Configuring nftables..."
 sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
 sysctl -w net.ipv4.ip_forward=1 > /dev/null
 
+# Backup existing nftables.conf if it exists and is not a previous Sentinel install
+if [[ -f /etc/nftables.conf ]] && ! grep -q 'sentinel_firewall' /etc/nftables.conf 2>/dev/null; then
+  BACKUP="/etc/nftables.conf.pre-sentinel.$(date +%Y%m%d%H%M%S)"
+  cp /etc/nftables.conf "$BACKUP"
+  warn "Existing nftables.conf backed up to $BACKUP"
+fi
+
 cat > /etc/nftables.conf << NFTEOF
 #!/usr/sbin/nft -f
 

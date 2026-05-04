@@ -5,7 +5,6 @@ import asyncio
 import os
 import re
 import tempfile
-from typing import Optional
 
 NFTABLES_CONF = "/etc/nftables.conf"
 
@@ -26,7 +25,9 @@ class NftablesManager:
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(f"nft {' '.join(args)} failed: {stderr.decode()}")
+            raise RuntimeError(
+                f"nft {' '.join(args)} exited {proc.returncode}: {stderr.decode().strip()}"
+            )
         return stdout.decode()
 
     async def apply_ruleset(self, content: str) -> None:
@@ -55,13 +56,24 @@ class NftablesManager:
         return json.loads(out)
 
     def inject_rules_between_markers(self, conf: str, section: str, rules: list[str]) -> str:
+        """Replace content between SENTINEL marker comments for `section`."""
+        if section not in MARKERS:
+            raise ValueError(f"Unknown section '{section}'. Valid: {list(MARKERS)}")
+
         start_marker, end_marker = MARKERS[section]
+
+        if start_marker not in conf or end_marker not in conf:
+            raise ValueError(
+                f"nftables.conf is missing required markers for section '{section}'.\n"
+                f"  Expected: '{start_marker}' and '{end_marker}'\n"
+                f"  File: {NFTABLES_CONF}\n"
+                f"  Reinstall or restore the config with: sudo nft -f /etc/nftables.conf"
+            )
+
         rules_text = "\n".join(f"    {r}" for r in rules)
         pattern = re.compile(
             re.escape(start_marker) + r".*?" + re.escape(end_marker),
             re.DOTALL,
         )
         replacement = f"{start_marker}\n{rules_text}\n    {end_marker}"
-        if not pattern.search(conf):
-            raise ValueError(f"Markers for '{section}' not found in nftables config")
         return pattern.sub(replacement, conf)
