@@ -263,15 +263,12 @@ ok "Kea DHCP configured (control agent on port 8001)"
 # =============================================================================
 info "Configuring Unbound DNS..."
 
-# Stop and disable systemd-resolved — Unbound takes over all DNS on this machine
 info "Freeing port 53 from systemd-resolved..."
 systemctl stop systemd-resolved 2>/dev/null || true
 systemctl disable systemd-resolved 2>/dev/null || true
-# Kill any remaining process still holding port 53
 fuser -k 53/tcp 2>/dev/null || true
 fuser -k 53/udp 2>/dev/null || true
 sleep 1
-# Point resolv.conf to Unbound on localhost
 rm -f /etc/resolv.conf
 printf 'nameserver 127.0.0.1\n' > /etc/resolv.conf
 ok "Port 53 freed"
@@ -324,20 +321,23 @@ chmod 700 /etc/wireguard
 WG_PRIVATE=$(wg genkey)
 WG_PUBLIC=$(echo "$WG_PRIVATE" | wg pubkey)
 
+# Note: no PostUp/PostDown needed — nftables forward chain already accepts
+# all traffic from wg0 via iifname "wg0" rules
 cat > /etc/wireguard/wg0.conf << WGEOF
 [Interface]
 Address = 10.8.0.1/24
 ListenPort = 51820
 PrivateKey = ${WG_PRIVATE}
-PostUp   = nft add element inet sentinel_firewall vpn_clients { 10.8.0.0/24 }
-PostDown = nft delete element inet sentinel_firewall vpn_clients { 10.8.0.0/24 } 2>/dev/null || true
 
-# Peers added via Sentinel dashboard
+# Peers are added via the Sentinel dashboard
 WGEOF
 chmod 600 /etc/wireguard/wg0.conf
 
 systemctl enable wg-quick@wg0
-systemctl start wg-quick@wg0
+systemctl start wg-quick@wg0 || {
+  journalctl -u wg-quick@wg0 --no-pager -n 20
+  error "WireGuard failed to start — see logs above"
+}
 ok "WireGuard configured"
 
 # =============================================================================
