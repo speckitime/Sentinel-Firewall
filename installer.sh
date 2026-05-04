@@ -85,7 +85,7 @@ apt-get install -y -qq \
   nmap \
   nodejs npm \
   nginx openssl \
-  net-tools curl jq
+  net-tools curl jq psmisc
 ok "Packages installed"
 
 # =============================================================================
@@ -263,18 +263,18 @@ ok "Kea DHCP configured (control agent on port 8001)"
 # =============================================================================
 info "Configuring Unbound DNS..."
 
-# Disable systemd-resolved stub listener so it doesn't hold port 53
-if systemctl is-active --quiet systemd-resolved; then
-  mkdir -p /etc/systemd/resolved.conf.d
-  cat > /etc/systemd/resolved.conf.d/no-stub.conf << RESEOF
-[Resolve]
-DNSStubListener=no
-RESEOF
-  systemctl restart systemd-resolved
-  # Remove the stub symlink so /etc/resolv.conf points to a real nameserver
-  rm -f /etc/resolv.conf
-  echo "nameserver 1.1.1.1" > /etc/resolv.conf
-fi
+# Stop and disable systemd-resolved — Unbound takes over all DNS on this machine
+info "Freeing port 53 from systemd-resolved..."
+systemctl stop systemd-resolved 2>/dev/null || true
+systemctl disable systemd-resolved 2>/dev/null || true
+# Kill any remaining process still holding port 53
+fuser -k 53/tcp 2>/dev/null || true
+fuser -k 53/udp 2>/dev/null || true
+sleep 1
+# Point resolv.conf to Unbound on localhost
+rm -f /etc/resolv.conf
+printf 'nameserver 127.0.0.1\n' > /etc/resolv.conf
+ok "Port 53 freed"
 
 mkdir -p /etc/unbound/unbound.conf.d
 cat > /etc/unbound/unbound.conf.d/sentinel.conf << UBEOF
@@ -305,14 +305,11 @@ forward-zone:
   forward-addr: 8.8.8.8
 UBEOF
 
-# Validate config before starting
-if ! unbound-checkconf /etc/unbound/unbound.conf.d/sentinel.conf 2>&1; then
-  error "Unbound config validation failed — see above"
-fi
+unbound-checkconf /etc/unbound/unbound.conf 2>&1 || error "Unbound config invalid — see above"
 
 systemctl enable unbound
 systemctl restart unbound || {
-  journalctl -u unbound --no-pager -n 20
+  journalctl -u unbound --no-pager -n 30
   error "Unbound failed to start — see logs above"
 }
 ok "Unbound DNS configured"
