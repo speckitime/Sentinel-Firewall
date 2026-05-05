@@ -1,11 +1,9 @@
-import { useTranslation } from 'react-i18next'
 import { LogOut } from 'lucide-react'
 import { useStore } from '../../store/useStore'
 import LanguageSwitch from '../common/LanguageSwitch'
 import { useNavigate } from 'react-router-dom'
 
 export default function TopBar() {
-  const { t } = useTranslation()
   const logout = useStore((s) => s.logout)
   const navigate = useNavigate()
 

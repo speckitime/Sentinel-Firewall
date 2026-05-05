@@ -149,6 +149,12 @@ export default function NAT() {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-sentinel-surface border border-sentinel-border rounded-xl p-6 w-full max-w-md space-y-4">
             <h2 className="font-semibold">{editIdx !== null ? t('common.edit') : t('nat.add_forward')}</h2>
+            {/* datalist provides DHCP lease IPs as autocomplete suggestions */}
+            <datalist id="lease-ips">
+              {(leases as { ip: string; hostname: string }[]).map((l) => (
+                <option key={l.ip} value={l.ip} />
+              ))}
+            </datalist>
             {([
               { label: t('nat.name'),     key: 'name',          type: 'text'   },
               { label: t('nat.ext_port'), key: 'external_port', type: 'number' },
@@ -159,6 +165,7 @@ export default function NAT() {
                 <label className="block text-xs text-sentinel-muted mb-1">{label}</label>
                 <input
                   type={type}
+                  list={key === 'internal_ip' ? 'lease-ips' : undefined}
                   value={String(form[key] ?? '')}
                   onChange={(e) => setForm((f) => ({ ...f, [key]: type === 'number' ? Number(e.target.value) : e.target.value }))}
                   className="w-full bg-sentinel-bg border border-sentinel-border rounded px-3 py-2 text-sm outline-none focus:border-sentinel-primary"

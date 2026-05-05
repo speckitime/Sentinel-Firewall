@@ -34,8 +34,8 @@ export default function Dashboard() {
   const statCards = [
     { label: t('dashboard.threats_today'), value: threatStats?.total ?? '—' },
     { label: t('dashboard.blocked_ips'),   value: threatStats?.blocked ?? '—' },
-    { label: t('dashboard.active_leases'), value: leases?.length ?? '—' },
-    { label: t('dashboard.vpn_peers'),     value: vpnPeers?.length ?? '—' },
+    { label: t('dashboard.active_leases'), value: (leases as unknown[])?.length ?? '—' },
+    { label: t('dashboard.vpn_peers'),     value: (vpnPeers as unknown[])?.length ?? '—' },
   ]
 
   return (
@@ -57,7 +57,7 @@ export default function Dashboard() {
           <LineChart data={traffic}>
             <XAxis dataKey="t" hide />
             <YAxis hide />
-            <Tooltip formatter={(v: number) => `${(v / 1024).toFixed(1)} KB/s`} />
+            <Tooltip formatter={(v) => `${(Number(v) / 1024).toFixed(1)} KB/s`} />
             <Line type="monotone" dataKey="rx" stroke="#10B981" dot={false} strokeWidth={1.5} name="RX" />
             <Line type="monotone" dataKey="tx" stroke="#3B82F6" dot={false} strokeWidth={1.5} name="TX" />
           </LineChart>
