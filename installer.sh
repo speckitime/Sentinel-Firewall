@@ -60,7 +60,7 @@ done
 read -rp "Select WAN interface [0-$((${#IFACES[@]}-1))]: " WAN_IDX
 read -rp "Select LAN interface [0-$((${#IFACES[@]}-1))]: " LAN_IDX
 
-# Validate indices with if/then to avoid set -e false-positive on valid input
+# Validate with if/then to avoid set -e false-positive on valid input
 if [[ ! "$WAN_IDX" =~ ^[0-9]+$ ]] || [[ "$WAN_IDX" -ge "${#IFACES[@]}" ]]; then
   error "Invalid WAN selection"
 fi
@@ -130,15 +130,22 @@ ok "Packages installed"
 # =============================================================================
 info "Configuring LAN interface $LAN_IF = $LAN_GW/$CIDR ..."
 
-# Apply IP immediately
-ip addr flush dev "$LAN_IF" 2>/dev/null || true
-ip addr add "${LAN_GW}/${CIDR}" dev "$LAN_IF"
+# Assign gateway IP to LAN interface for this session.
+# We do NOT flush existing IPs (too aggressive) and do NOT call netplan apply
+# (it takes all interfaces briefly offline, which drops the SSH connection).
+# The ip addr add handles the current session; netplan handles reboots.
+if ip addr add "${LAN_GW}/${CIDR}" dev "$LAN_IF" 2>/dev/null; then
+  ok "IP ${LAN_GW}/${CIDR} assigned to $LAN_IF"
+else
+  warn "Could not add ${LAN_GW}/${CIDR} to $LAN_IF (may already be set)"
+fi
 ip link set "$LAN_IF" up
 
-# Remove any existing netplan configs that mention this interface to avoid conflicts
+# Write netplan config for persistence across reboots.
+# Back up any existing config for this interface to avoid conflicts.
 for f in /etc/netplan/*.yaml /etc/netplan/*.yml; do
   [[ -f "$f" ]] && grep -q "$LAN_IF" "$f" 2>/dev/null && {
-    warn "Removing conflicting netplan config: $f"
+    warn "Backing up conflicting netplan config: $f"
     mv "$f" "${f}.pre-sentinel.bak"
   } || true
 done
@@ -154,7 +161,9 @@ network:
         - ${LAN_GW}/${CIDR}
 NETEOF
 chmod 600 /etc/netplan/99-sentinel-lan.yaml
-netplan apply 2>/dev/null || warn "netplan apply failed — static IP set via ip command (persists until reboot)"
+# netplan apply is intentionally skipped — it would briefly take the WAN
+# interface offline and disconnect SSH. The ip addr add above applies
+# the IP immediately; netplan applies it on the next reboot.
 ok "LAN interface configured: $LAN_IF = $LAN_GW/$CIDR"
 
 # =============================================================================
@@ -206,9 +215,9 @@ table inet sentinel_firewall {
     ct state {established, related} accept
     iif lo accept
     ip saddr @blocked_ips drop
+    tcp dport 22 accept
     iifname "${LAN_IF}" accept
     iifname "wg0" accept
-    tcp dport 22 accept
     tcp dport {80, 443} accept
     icmp type echo-request accept
     # SENTINEL_INPUT_RULES_START
@@ -323,7 +332,7 @@ fuser -k 53/udp 2>/dev/null || true
 sleep 1
 # Fix resolv.conf (systemd-resolved may have left a broken symlink)
 rm -f /etc/resolv.conf
-printf 'nameserver 127.0.0.1\nnameserver 1.1.1.1\n' > /etc/resolv.conf
+printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /etc/resolv.conf
 ok "Port 53 freed"
 
 mkdir -p /etc/unbound/unbound.conf.d
@@ -359,6 +368,8 @@ unbound-checkconf /etc/unbound/unbound.conf 2>&1 || error "Unbound config syntax
 systemctl enable unbound
 systemctl restart unbound
 wait_service unbound
+# Switch resolv.conf to local Unbound now that it is running
+printf 'nameserver 127.0.0.1\nnameserver 1.1.1.1\n' > /etc/resolv.conf
 ok "Unbound DNS configured"
 
 # =============================================================================
@@ -415,7 +426,7 @@ text = re.sub(
     text,
 )
 
-# Update the first af-packet interface entry (non-greedy match through newlines)
+# Update the first af-packet interface entry (non-greedy across newlines)
 text = re.sub(
     r'(af-packet:.*?interface:\s*)\S+',
     lambda m: m.group(1) + wan_if,
