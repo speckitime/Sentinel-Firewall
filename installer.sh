@@ -125,11 +125,10 @@ ok "System packages installed"
 
 # Install Node.js 20 LTS via NodeSource (Ubuntu's built-in npm 9 is too slow)
 info "Installing Node.js 20 LTS..."
-# Remove any Ubuntu-packaged nodejs to avoid conflicts
 apt-get remove -y nodejs npm 2>/dev/null || true
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>&1 | grep -v '^$' || true
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>&1 | grep -E '(error|Error|warn)' || true
 apt-get install -y nodejs
-ok "Node.js $(node --version) / npm $(npm --version) installed"
+ok "Node.js $(node --version) installed"
 
 # =============================================================================
 # 5. LAN INTERFACE IP
@@ -137,7 +136,7 @@ ok "Node.js $(node --version) / npm $(npm --version) installed"
 info "Configuring LAN interface $LAN_IF = $LAN_GW/$CIDR ..."
 
 # Assign gateway IP for this session.
-# We do NOT call netplan apply — it takes all interfaces briefly offline
+# Do NOT call netplan apply — it takes all interfaces briefly offline
 # and would drop the SSH connection. ip addr add is immediate and safe.
 if ip addr add "${LAN_GW}/${CIDR}" dev "$LAN_IF" 2>/dev/null; then
   ok "IP ${LAN_GW}/${CIDR} assigned to $LAN_IF"
@@ -269,9 +268,7 @@ info "Configuring Kea DHCP..."
 
 mkdir -p /etc/kea /var/lib/kea /var/log/kea /run/kea
 
-# Ubuntu 24.04's kea-ctrl-agent.service has:
-#   ConditionFileNotEmpty=/etc/kea/kea-api-password
-# The service is silently skipped when this file is missing.
+# Ubuntu 24.04's kea-ctrl-agent.service requires this file to be present
 KEA_PASS=$(openssl rand -hex 16)
 printf '%s' "$KEA_PASS" > /etc/kea/kea-api-password
 chmod 640 /etc/kea/kea-api-password
@@ -335,7 +332,7 @@ systemctl enable kea-dhcp4-server kea-ctrl-agent
 systemctl restart kea-dhcp4-server kea-ctrl-agent
 wait_service kea-dhcp4-server
 wait_service kea-ctrl-agent
-ok "Kea DHCP configured (control agent on port 8001, auth enabled)"
+ok "Kea DHCP configured (control agent on port 8001)"
 
 # =============================================================================
 # 8. UNBOUND DNS
@@ -367,8 +364,6 @@ server:
   hide-identity: yes
   hide-version: yes
   harden-glue: yes
-  harden-dnssec-stripped: yes
-  use-caps-for-id: yes
   cache-min-ttl: 60
   cache-max-ttl: 86400
   prefetch: yes
@@ -486,11 +481,18 @@ ok "Python venv ready"
 # =============================================================================
 info "Building frontend..."
 
+# Use yarn (classic v1) instead of npm.
+# npm's idealTree phase hangs on complex peer-dependency trees; yarn's
+# resolution algorithm does not have this problem.
+info "Installing yarn..."
+npm install -g yarn 2>&1 | tail -3
+ok "yarn $(yarn --version) ready"
+
 cd "$INSTALL_DIR/frontend"
-# --no-audit skips the post-install security audit network request
-# --no-fund suppresses funding messages
-npm install --no-audit --no-fund 2>&1 || error "npm install failed — see above"
-npm run build 2>&1 || error "npm run build failed — see above"
+yarn install --non-interactive --network-timeout 120000 2>&1 \
+  || error "yarn install failed — see above"
+yarn build 2>&1 \
+  || error "yarn build failed — see above"
 ok "Frontend built"
 
 mkdir -p /etc/nginx/ssl
