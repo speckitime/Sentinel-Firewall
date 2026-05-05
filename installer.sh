@@ -96,7 +96,8 @@ done
 
 IFS='/' read -r NET_ADDR CIDR <<< "$LAN_SUBNET"
 IFS='.' read -r a b c d <<< "$NET_ADDR"
-LAN_GW="${a}.${b}.${c}.$((d+1))"
+# Use .2 as the firewall LAN IP — .1 is reserved as the network gateway/router address
+LAN_GW="${a}.${b}.${c}.$((d+2))"
 DHCP_START="${a}.${b}.${c}.$((d+100))"
 DHCP_END="${a}.${b}.${c}.$((d+200))"
 
