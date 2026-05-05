@@ -606,11 +606,11 @@ CFGEOF
 PASS_FILE=$(mktemp)
 chmod 600 "$PASS_FILE"
 printf '%s' "$ADMIN_PASS" > "$PASS_FILE"
+# Hash password using bcrypt directly (passlib 1.7.4 is incompatible with bcrypt 4+)
 ADMIN_HASH=$("$INSTALL_DIR/.venv/bin/python3" - "$PASS_FILE" << 'PYEOF'
-import sys
-from passlib.context import CryptContext
-ctx = CryptContext(schemes=["bcrypt"])
-print(ctx.hash(open(sys.argv[1]).read()))
+import sys, bcrypt
+password = open(sys.argv[1]).read().encode()
+print(bcrypt.hashpw(password, bcrypt.gensalt(12)).decode())
 PYEOF
 )
 rm -f "$PASS_FILE"

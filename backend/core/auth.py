@@ -4,19 +4,18 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from .config import load_secrets
 
-_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
-_oauth2  = OAuth2PasswordBearer(tokenUrl="/api/system/auth/login")
+_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/system/auth/login")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_ctx.verify(plain, hashed)
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
 def create_token(data: dict) -> str:
