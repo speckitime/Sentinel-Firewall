@@ -14,8 +14,6 @@ CONF_DIR="/etc/sentinel"
 REPO_URL="https://github.com/speckitime/Sentinel-Firewall.git"
 
 # Force IPv4 for all Node.js / npm / yarn network calls.
-# Many VPS hosts have IPv6 DNS entries for npmjs.org but no IPv6 routing,
-# causing EHOSTUNREACH. This env-var tells Node to prefer A over AAAA records.
 export NODE_OPTIONS="--dns-result-order=ipv4first"
 
 info()  { echo -e "${CYAN}[INFO]${RESET}  $*"; }
@@ -23,8 +21,6 @@ ok()    { echo -e "${GREEN}[OK]${RESET}    $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
 error() { echo -e "${RED}[ERROR]${RESET} $*"; exit 1; }
 
-# Wait for a service to become active, print journal on failure.
-# Usage: wait_service <service> [max_tries]   default max_tries=10
 wait_service() {
   local svc="$1" max="${2:-10}" tries=0
   while ! systemctl is-active --quiet "$svc"; do
@@ -96,7 +92,7 @@ done
 
 IFS='/' read -r NET_ADDR CIDR <<< "$LAN_SUBNET"
 IFS='.' read -r a b c d <<< "$NET_ADDR"
-# Use .2 as the firewall LAN IP — .1 is reserved as the network gateway/router address
+# Use .2 as firewall LAN IP (.1 is reserved for the upstream/vSwitch gateway)
 LAN_GW="${a}.${b}.${c}.$((d+2))"
 DHCP_START="${a}.${b}.${c}.$((d+100))"
 DHCP_END="${a}.${b}.${c}.$((d+200))"
@@ -129,12 +125,10 @@ apt-get install -y -qq \
   net-tools curl jq psmisc git ca-certificates gnupg
 ok "System packages installed"
 
-# Install Node.js 20 LTS via NodeSource (Ubuntu's built-in npm 9 is too slow)
 info "Installing Node.js 20 LTS..."
 apt-get remove -y nodejs npm 2>/dev/null || true
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>&1 | grep -E '(error|Error|warn)' || true
 apt-get install -y nodejs
-# Also tell npm itself to prefer IPv4 (belt-and-suspenders alongside NODE_OPTIONS)
 npm config set prefer-ipv4 true 2>/dev/null || true
 ok "Node.js $(node --version) installed"
 
@@ -143,9 +137,7 @@ ok "Node.js $(node --version) installed"
 # =============================================================================
 info "Configuring LAN interface $LAN_IF = $LAN_GW/$CIDR ..."
 
-# Assign gateway IP for this session.
-# Do NOT call netplan apply — it takes all interfaces briefly offline
-# and would drop the SSH connection. ip addr add is immediate and safe.
+# Assign our static gateway IP for this session
 if ip addr add "${LAN_GW}/${CIDR}" dev "$LAN_IF" 2>/dev/null; then
   ok "IP ${LAN_GW}/${CIDR} assigned to $LAN_IF"
 else
@@ -153,14 +145,45 @@ else
 fi
 ip link set "$LAN_IF" up
 
-# Back up any existing netplan config for this interface to avoid conflicts
+# Remove any DHCP-assigned addresses from the LAN interface.
+# Problem: if a DHCP lease (e.g. from a Hetzner vSwitch) is active on the
+# LAN interface and one of those IPs also belongs to another machine on the
+# same subnet, the kernel will route reply packets to itself instead of
+# sending them on the wire, making the firewall unreachable.
+info "Removing DHCP leases from $LAN_IF..."
+while read -r addr; do
+  ip addr del "$addr" dev "$LAN_IF" 2>/dev/null \
+    && warn "Removed DHCP address $addr from $LAN_IF"
+done < <(ip -4 addr show dev "$LAN_IF" dynamic 2>/dev/null | grep -oP '(?<=inet )\S+')
+
+# Tell systemd-networkd to use a static IP on the LAN interface and stop
+# issuing DHCP requests. This survives networkd reloads and reboots.
+# We write to /etc/systemd/network/ which takes precedence over the
+# /run/systemd/network/ configs that netplan generates.
+mkdir -p /etc/systemd/network
+cat > "/etc/systemd/network/10-sentinel-${LAN_IF}.network" << NETDEOF
+[Match]
+Name=${LAN_IF}
+
+[Network]
+Address=${LAN_GW}/${CIDR}
+DHCP=no
+ConfigureWithoutCarrier=yes
+NETDEOF
+
+# Reload networkd config for LAN interface only (does not drop other links)
+networkctl reload 2>/dev/null || true
+sleep 1
+ok "LAN interface configured: $LAN_IF = $LAN_GW/$CIDR (DHCP disabled)"
+
+# Write netplan config for reboot persistence (netplan apply intentionally
+# skipped — it briefly takes all interfaces offline which would drop SSH)
 for f in /etc/netplan/*.yaml /etc/netplan/*.yml; do
   [[ -f "$f" ]] && grep -q "$LAN_IF" "$f" 2>/dev/null && {
     warn "Backing up conflicting netplan config: $f"
     mv "$f" "${f}.pre-sentinel.bak"
   } || true
 done
-
 mkdir -p /etc/netplan
 cat > /etc/netplan/99-sentinel-lan.yaml << NETEOF
 network:
@@ -172,9 +195,6 @@ network:
         - ${LAN_GW}/${CIDR}
 NETEOF
 chmod 600 /etc/netplan/99-sentinel-lan.yaml
-# netplan apply is intentionally skipped — would drop SSH.
-# Takes effect automatically on next reboot.
-ok "LAN interface configured: $LAN_IF = $LAN_GW/$CIDR"
 
 # =============================================================================
 # 6. NFTABLES
@@ -276,7 +296,6 @@ info "Configuring Kea DHCP..."
 
 mkdir -p /etc/kea /var/lib/kea /var/log/kea /run/kea
 
-# Ubuntu 24.04's kea-ctrl-agent.service requires this file to be present
 KEA_PASS=$(openssl rand -hex 16)
 printf '%s' "$KEA_PASS" > /etc/kea/kea-api-password
 chmod 640 /etc/kea/kea-api-password
@@ -489,11 +508,6 @@ ok "Python venv ready"
 # =============================================================================
 info "Building frontend..."
 
-# Use yarn (classic v1) instead of npm.
-# npm's idealTree phase hangs on complex peer-dependency trees; yarn's
-# resolution algorithm does not have this problem.
-# NODE_OPTIONS=--dns-result-order=ipv4first (set at top of script) ensures
-# both npm and yarn connect via IPv4 even when DNS returns AAAA records.
 info "Installing yarn..."
 npm install -g yarn 2>&1 | tail -3
 ok "yarn $(yarn --version) ready"
@@ -607,7 +621,6 @@ CFGEOF
 PASS_FILE=$(mktemp)
 chmod 600 "$PASS_FILE"
 printf '%s' "$ADMIN_PASS" > "$PASS_FILE"
-# Hash password using bcrypt directly (passlib 1.7.4 is incompatible with bcrypt 4+)
 ADMIN_HASH=$("$INSTALL_DIR/.venv/bin/python3" - "$PASS_FILE" << 'PYEOF'
 import sys, bcrypt
 password = open(sys.argv[1]).read().encode()
