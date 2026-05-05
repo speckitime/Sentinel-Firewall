@@ -13,6 +13,11 @@ INSTALL_DIR="/opt/sentinel"
 CONF_DIR="/etc/sentinel"
 REPO_URL="https://github.com/speckitime/Sentinel-Firewall.git"
 
+# Force IPv4 for all Node.js / npm / yarn network calls.
+# Many VPS hosts have IPv6 DNS entries for npmjs.org but no IPv6 routing,
+# causing EHOSTUNREACH. This env-var tells Node to prefer A over AAAA records.
+export NODE_OPTIONS="--dns-result-order=ipv4first"
+
 info()  { echo -e "${CYAN}[INFO]${RESET}  $*"; }
 ok()    { echo -e "${GREEN}[OK]${RESET}    $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
@@ -128,6 +133,8 @@ info "Installing Node.js 20 LTS..."
 apt-get remove -y nodejs npm 2>/dev/null || true
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>&1 | grep -E '(error|Error|warn)' || true
 apt-get install -y nodejs
+# Also tell npm itself to prefer IPv4 (belt-and-suspenders alongside NODE_OPTIONS)
+npm config set prefer-ipv4 true 2>/dev/null || true
 ok "Node.js $(node --version) installed"
 
 # =============================================================================
@@ -484,6 +491,8 @@ info "Building frontend..."
 # Use yarn (classic v1) instead of npm.
 # npm's idealTree phase hangs on complex peer-dependency trees; yarn's
 # resolution algorithm does not have this problem.
+# NODE_OPTIONS=--dns-result-order=ipv4first (set at top of script) ensures
+# both npm and yarn connect via IPv4 even when DNS returns AAAA records.
 info "Installing yarn..."
 npm install -g yarn 2>&1 | tail -3
 ok "yarn $(yarn --version) ready"
