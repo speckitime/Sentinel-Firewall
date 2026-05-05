@@ -60,7 +60,6 @@ done
 read -rp "Select WAN interface [0-$((${#IFACES[@]}-1))]: " WAN_IDX
 read -rp "Select LAN interface [0-$((${#IFACES[@]}-1))]: " LAN_IDX
 
-# Validate with if/then to avoid set -e false-positive on valid input
 if [[ ! "$WAN_IDX" =~ ^[0-9]+$ ]] || [[ "$WAN_IDX" -ge "${#IFACES[@]}" ]]; then
   error "Invalid WAN selection"
 fi
@@ -130,10 +129,9 @@ ok "Packages installed"
 # =============================================================================
 info "Configuring LAN interface $LAN_IF = $LAN_GW/$CIDR ..."
 
-# Assign gateway IP to LAN interface for this session.
-# We do NOT flush existing IPs (too aggressive) and do NOT call netplan apply
-# (it takes all interfaces briefly offline, which drops the SSH connection).
-# The ip addr add handles the current session; netplan handles reboots.
+# Assign gateway IP for this session.
+# We do NOT call netplan apply — it takes all interfaces briefly offline
+# and would drop the SSH connection. ip addr add is immediate and safe.
 if ip addr add "${LAN_GW}/${CIDR}" dev "$LAN_IF" 2>/dev/null; then
   ok "IP ${LAN_GW}/${CIDR} assigned to $LAN_IF"
 else
@@ -141,8 +139,7 @@ else
 fi
 ip link set "$LAN_IF" up
 
-# Write netplan config for persistence across reboots.
-# Back up any existing config for this interface to avoid conflicts.
+# Back up any existing netplan config for this interface to avoid conflicts
 for f in /etc/netplan/*.yaml /etc/netplan/*.yml; do
   [[ -f "$f" ]] && grep -q "$LAN_IF" "$f" 2>/dev/null && {
     warn "Backing up conflicting netplan config: $f"
@@ -161,9 +158,8 @@ network:
         - ${LAN_GW}/${CIDR}
 NETEOF
 chmod 600 /etc/netplan/99-sentinel-lan.yaml
-# netplan apply is intentionally skipped — it would briefly take the WAN
-# interface offline and disconnect SSH. The ip addr add above applies
-# the IP immediately; netplan applies it on the next reboot.
+# netplan apply is intentionally skipped — would drop SSH.
+# Takes effect automatically on next reboot.
 ok "LAN interface configured: $LAN_IF = $LAN_GW/$CIDR"
 
 # =============================================================================
@@ -171,7 +167,6 @@ ok "LAN interface configured: $LAN_IF = $LAN_GW/$CIDR"
 # =============================================================================
 info "Configuring nftables..."
 
-# Enable IP forwarding idempotently
 if grep -q '^#*net.ipv4.ip_forward' /etc/sysctl.conf; then
   sed -i 's/^#*net.ipv4.ip_forward.*/net.ipv4.ip_forward=1/' /etc/sysctl.conf
 else
@@ -265,7 +260,17 @@ ok "nftables configured"
 # =============================================================================
 info "Configuring Kea DHCP..."
 
-mkdir -p /etc/kea
+mkdir -p /etc/kea /var/lib/kea /var/log/kea /run/kea
+
+# Ubuntu 24.04's kea-ctrl-agent.service has:
+#   ConditionFileNotEmpty=/etc/kea/kea-api-password
+# The service is silently skipped (never starts) when this file is missing.
+# Generate a random password and write it now.
+KEA_PASS=$(openssl rand -hex 16)
+printf '%s' "$KEA_PASS" > /etc/kea/kea-api-password
+chmod 640 /etc/kea/kea-api-password
+chown root:_kea /etc/kea/kea-api-password 2>/dev/null || true
+
 cat > /etc/kea/kea-dhcp4.conf << KEAEOF
 {
   "Dhcp4": {
@@ -302,6 +307,14 @@ cat > /etc/kea/kea-ctrl-agent.conf << CTRLEOF
   "Control-agent": {
     "http-host": "127.0.0.1",
     "http-port": 8001,
+    "authentication": {
+      "type": "basic",
+      "realm": "kea-control-agent",
+      "clients": [{
+        "user": "sentinel",
+        "password-file": "/etc/kea/kea-api-password"
+      }]
+    },
     "control-sockets": {
       "dhcp4": {
         "socket-type": "unix",
@@ -312,12 +325,11 @@ cat > /etc/kea/kea-ctrl-agent.conf << CTRLEOF
 }
 CTRLEOF
 
-mkdir -p /var/lib/kea /var/log/kea /run/kea
 systemctl enable kea-dhcp4-server kea-ctrl-agent
 systemctl restart kea-dhcp4-server kea-ctrl-agent
 wait_service kea-dhcp4-server
 wait_service kea-ctrl-agent
-ok "Kea DHCP configured (control agent on port 8001)"
+ok "Kea DHCP configured (control agent on port 8001, auth enabled)"
 
 # =============================================================================
 # 8. UNBOUND DNS
@@ -330,7 +342,7 @@ systemctl disable systemd-resolved 2>/dev/null || true
 fuser -k 53/tcp 2>/dev/null || true
 fuser -k 53/udp 2>/dev/null || true
 sleep 1
-# Fix resolv.conf (systemd-resolved may have left a broken symlink)
+# Use public DNS until Unbound is running
 rm -f /etc/resolv.conf
 printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /etc/resolv.conf
 ok "Port 53 freed"
@@ -368,7 +380,8 @@ unbound-checkconf /etc/unbound/unbound.conf 2>&1 || error "Unbound config syntax
 systemctl enable unbound
 systemctl restart unbound
 wait_service unbound
-# Switch resolv.conf to local Unbound now that it is running
+# Now that Unbound is up, point resolv.conf to localhost
+rm -f /etc/resolv.conf
 printf 'nameserver 127.0.0.1\nnameserver 1.1.1.1\n' > /etc/resolv.conf
 ok "Unbound DNS configured"
 
@@ -407,7 +420,6 @@ info "Configuring Suricata..."
 suricata-update 2>&1 | tail -5 || warn "suricata-update failed — rules may be outdated"
 
 # Patch the default suricata.yaml to use our WAN interface and LAN subnet.
-# We modify in-place rather than replacing, keeping all distro defaults intact.
 if [[ -f /etc/suricata/suricata.yaml ]]; then
   cp /etc/suricata/suricata.yaml /etc/suricata/suricata.yaml.pre-sentinel.bak
   python3 - "${WAN_IF}" "${LAN_SUBNET}" << 'SUPY'
@@ -419,14 +431,12 @@ path       = '/etc/suricata/suricata.yaml'
 
 text = open(path).read()
 
-# Update HOME_NET to include our LAN subnet and WireGuard range
 text = re.sub(
     r'(HOME_NET:\s*)"[^"]*"',
     f'\\1"[{lan_subnet},10.8.0.0/24]"',
     text,
 )
 
-# Update the first af-packet interface entry (non-greedy across newlines)
 text = re.sub(
     r'(af-packet:.*?interface:\s*)\S+',
     lambda m: m.group(1) + wan_if,
@@ -442,7 +452,6 @@ fi
 
 systemctl enable suricata
 systemctl restart suricata
-# Suricata loads rules on startup — allow up to 60 seconds
 wait_service suricata 60
 ok "Suricata configured"
 
@@ -476,7 +485,6 @@ ok "Python venv ready"
 info "Building frontend..."
 
 cd "$INSTALL_DIR/frontend"
-# Use npm install (works without package-lock.json)
 npm install 2>&1 || error "npm install failed — see above"
 npm run build 2>&1 || error "npm run build failed — see above"
 ok "Frontend built"
@@ -487,7 +495,6 @@ openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
   -out /etc/nginx/ssl/sentinel.crt \
   -subj "/CN=${LAN_GW}" 2>/dev/null
 
-# Remove default nginx site to avoid port 80/443 conflicts
 rm -f /etc/nginx/sites-enabled/default
 
 cat > /etc/nginx/sites-available/sentinel << NGINXEOF
@@ -563,7 +570,7 @@ ports    = "1-1024"
 
 [dhcp]
 kea_socket   = "/run/kea/kea4-ctrl-socket"
-kea_ctrl_url = "http://127.0.0.1:8001/"
+kea_ctrl_url = "http://sentinel:${KEA_PASS}@127.0.0.1:8001/"
 lease_file   = "/var/lib/kea/kea-leases4.csv"
 
 [dns]
@@ -581,7 +588,7 @@ email_enabled    = false
 telegram_enabled = false
 CFGEOF
 
-# Hash admin password via temp file to safely handle special characters
+# Hash admin password via temp file (avoids special-char issues)
 PASS_FILE=$(mktemp)
 chmod 600 "$PASS_FILE"
 printf '%s' "$ADMIN_PASS" > "$PASS_FILE"
@@ -596,8 +603,8 @@ rm -f "$PASS_FILE"
 
 JWT_SECRET=$(openssl rand -hex 32)
 
-# Write secrets.toml via Python so the bcrypt hash (which contains '$' signs)
-# is never interpolated by the shell inside a heredoc.
+# Write secrets.toml via Python — the bcrypt hash contains '$' signs that
+# would be mangled by shell expansion in an unquoted heredoc.
 HASH_TMP=$(mktemp)
 chmod 600 "$HASH_TMP"
 printf '%s' "$ADMIN_HASH" > "$HASH_TMP"
@@ -627,7 +634,7 @@ cp "$INSTALL_DIR/systemd/"*.timer  /etc/systemd/system/ 2>/dev/null || true
 systemctl daemon-reload
 systemctl enable sentinel-api sentinel-ids sentinel-scanner.timer
 
-# Start API and wait up to 20 s for health endpoint
+# Start API and poll health endpoint for up to 20 s
 systemctl start sentinel-api || true
 API_OK=false
 for i in $(seq 1 10); do
@@ -660,7 +667,7 @@ echo -e "  DHCP range:    ${BOLD}${DHCP_START} — ${DHCP_END}${RESET}"
 echo -e "  WireGuard key: ${BOLD}${WG_PUBLIC}${RESET}"
 echo
 echo -e "  Service status:"
-for svc in nftables kea-dhcp4-server unbound wg-quick@wg0 suricata nginx sentinel-api; do
+for svc in nftables kea-dhcp4-server kea-ctrl-agent unbound wg-quick@wg0 suricata nginx sentinel-api; do
   if systemctl is-active --quiet "$svc" 2>/dev/null; then
     echo -e "    ${GREEN}✓${RESET} $svc"
   else
