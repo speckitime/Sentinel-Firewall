@@ -108,7 +108,7 @@ ok "LAN gateway: $LAN_GW  |  DHCP: $DHCP_START — $DHCP_END"
 # =============================================================================
 # 4. PACKAGE INSTALLATION
 # =============================================================================
-info "Installing packages..."
+info "Installing system packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
@@ -119,10 +119,17 @@ apt-get install -y -qq \
   unbound \
   wireguard-tools qrencode \
   nmap \
-  nodejs npm \
   nginx openssl \
-  net-tools curl jq psmisc git
-ok "Packages installed"
+  net-tools curl jq psmisc git ca-certificates gnupg
+ok "System packages installed"
+
+# Install Node.js 20 LTS via NodeSource (Ubuntu's built-in npm 9 is too slow)
+info "Installing Node.js 20 LTS..."
+# Remove any Ubuntu-packaged nodejs to avoid conflicts
+apt-get remove -y nodejs npm 2>/dev/null || true
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>&1 | grep -v '^$' || true
+apt-get install -y nodejs
+ok "Node.js $(node --version) / npm $(npm --version) installed"
 
 # =============================================================================
 # 5. LAN INTERFACE IP
@@ -264,8 +271,7 @@ mkdir -p /etc/kea /var/lib/kea /var/log/kea /run/kea
 
 # Ubuntu 24.04's kea-ctrl-agent.service has:
 #   ConditionFileNotEmpty=/etc/kea/kea-api-password
-# The service is silently skipped (never starts) when this file is missing.
-# Generate a random password and write it now.
+# The service is silently skipped when this file is missing.
 KEA_PASS=$(openssl rand -hex 16)
 printf '%s' "$KEA_PASS" > /etc/kea/kea-api-password
 chmod 640 /etc/kea/kea-api-password
@@ -336,13 +342,11 @@ ok "Kea DHCP configured (control agent on port 8001, auth enabled)"
 # =============================================================================
 info "Configuring Unbound DNS..."
 
-# Stop systemd-resolved and free port 53
 systemctl stop systemd-resolved 2>/dev/null || true
 systemctl disable systemd-resolved 2>/dev/null || true
 fuser -k 53/tcp 2>/dev/null || true
 fuser -k 53/udp 2>/dev/null || true
 sleep 1
-# Use public DNS until Unbound is running
 rm -f /etc/resolv.conf
 printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /etc/resolv.conf
 ok "Port 53 freed"
@@ -380,7 +384,6 @@ unbound-checkconf /etc/unbound/unbound.conf 2>&1 || error "Unbound config syntax
 systemctl enable unbound
 systemctl restart unbound
 wait_service unbound
-# Now that Unbound is up, point resolv.conf to localhost
 rm -f /etc/resolv.conf
 printf 'nameserver 127.0.0.1\nnameserver 1.1.1.1\n' > /etc/resolv.conf
 ok "Unbound DNS configured"
@@ -419,7 +422,6 @@ info "Configuring Suricata..."
 
 suricata-update 2>&1 | tail -5 || warn "suricata-update failed — rules may be outdated"
 
-# Patch the default suricata.yaml to use our WAN interface and LAN subnet.
 if [[ -f /etc/suricata/suricata.yaml ]]; then
   cp /etc/suricata/suricata.yaml /etc/suricata/suricata.yaml.pre-sentinel.bak
   python3 - "${WAN_IF}" "${LAN_SUBNET}" << 'SUPY'
@@ -485,7 +487,9 @@ ok "Python venv ready"
 info "Building frontend..."
 
 cd "$INSTALL_DIR/frontend"
-npm install 2>&1 || error "npm install failed — see above"
+# --no-audit skips the post-install security audit network request
+# --no-fund suppresses funding messages
+npm install --no-audit --no-fund 2>&1 || error "npm install failed — see above"
 npm run build 2>&1 || error "npm run build failed — see above"
 ok "Frontend built"
 
@@ -588,7 +592,6 @@ email_enabled    = false
 telegram_enabled = false
 CFGEOF
 
-# Hash admin password via temp file (avoids special-char issues)
 PASS_FILE=$(mktemp)
 chmod 600 "$PASS_FILE"
 printf '%s' "$ADMIN_PASS" > "$PASS_FILE"
@@ -603,8 +606,6 @@ rm -f "$PASS_FILE"
 
 JWT_SECRET=$(openssl rand -hex 32)
 
-# Write secrets.toml via Python — the bcrypt hash contains '$' signs that
-# would be mangled by shell expansion in an unquoted heredoc.
 HASH_TMP=$(mktemp)
 chmod 600 "$HASH_TMP"
 printf '%s' "$ADMIN_HASH" > "$HASH_TMP"
@@ -634,7 +635,6 @@ cp "$INSTALL_DIR/systemd/"*.timer  /etc/systemd/system/ 2>/dev/null || true
 systemctl daemon-reload
 systemctl enable sentinel-api sentinel-ids sentinel-scanner.timer
 
-# Start API and poll health endpoint for up to 20 s
 systemctl start sentinel-api || true
 API_OK=false
 for i in $(seq 1 10); do
